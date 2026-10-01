@@ -7,10 +7,12 @@ function App() {
   const [resume, setResume] = useState(null);
   const [uploadMessage, setUploadMessage] = useState("");
   const [listening, setListening] = useState(null);
+  const [loadingQuestions, setLoadingQuestions] = useState(false);
 
   // Select resume
   function handleFile(event) {
     setResume(event.target.files[0]);
+    setUploadMessage("");
   }
 
   // Upload resume
@@ -20,43 +22,83 @@ function App() {
       return;
     }
 
-    const formData = new FormData();
-    formData.append("file", resume);
+    try {
+      const formData = new FormData();
+      formData.append("file", resume);
 
-    const response = await fetch(
-      "http://127.0.0.1:8000/upload-resume",
-      {
-        method: "POST",
-        body: formData,
+      const response = await fetch(
+        "http://localhost:8000/upload-resume",
+        {
+          method: "POST",
+          body: formData,
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        setUploadMessage(data.detail || "Resume upload failed.");
+        return;
       }
-    );
 
-    const data = await response.json();
-
-    setUploadMessage(
-      data.message + ": " + data.filename
-    );
+      setUploadMessage(
+        data.message + ": " + data.filename
+      );
+    } catch (error) {
+      console.error(error);
+      setUploadMessage(
+        "Cannot connect to backend. Make sure Docker backend is running."
+      );
+    }
   }
 
   // Generate interview questions
-  async function generateQuestions() {
-    const response = await fetch(
-      "http://127.0.0.1:8000/generate-questions"
-    );
+  async function generateQuestions(event) {
+    if (event) {
+      event.preventDefault();
+    }
 
-    const data = await response.json();
+    setLoadingQuestions(true);
 
-    setQuestions(data.questions);
-    setAnswers({});
-    setResults({});
+    try {
+      const response = await fetch(
+        "http://localhost:8000/generate-questions",
+        {
+          method: "GET",
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        alert(data.detail || data.error || "Failed to generate questions.");
+        return;
+      }
+
+      if (data.questions && data.questions.length > 0) {
+        setQuestions(data.questions);
+        setAnswers({});
+        setResults({});
+      } else {
+        alert("No questions were generated.");
+      }
+    } catch (error) {
+      console.error("Generate questions error:", error);
+
+      alert(
+        "Cannot connect to backend. Make sure ai-interview-backend is running."
+      );
+    } finally {
+      setLoadingQuestions(false);
+    }
   }
 
   // Store answer
   function handleAnswer(index, value) {
-    setAnswers({
-      ...answers,
+    setAnswers((previousAnswers) => ({
+      ...previousAnswers,
       [index]: value,
-    });
+    }));
   }
 
   // Voice answer
@@ -116,21 +158,31 @@ function App() {
       return;
     }
 
-    const response = await fetch(
-      `http://127.0.0.1:8000/evaluate-answer?question=${encodeURIComponent(
-        question
-      )}&answer=${encodeURIComponent(answer)}`,
-      {
-        method: "POST",
+    try {
+      const response = await fetch(
+        `http://localhost:8000/evaluate-answer?question=${encodeURIComponent(
+          question
+        )}&answer=${encodeURIComponent(answer)}`,
+        {
+          method: "POST",
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        alert(data.detail || "Evaluation failed.");
+        return;
       }
-    );
 
-    const data = await response.json();
-
-    setResults((previousResults) => ({
-      ...previousResults,
-      [index]: data,
-    }));
+      setResults((previousResults) => ({
+        ...previousResults,
+        [index]: data,
+      }));
+    } catch (error) {
+      console.error(error);
+      alert("Cannot connect to backend.");
+    }
   }
 
   // Dashboard calculations
@@ -186,6 +238,7 @@ function App() {
           <br />
 
           <button
+            type="button"
             onClick={uploadResume}
             style={styles.primaryButton}
           >
@@ -204,16 +257,21 @@ function App() {
           <h2>🎯 Interview Questions</h2>
 
           <button
+            type="button"
             onClick={generateQuestions}
             style={styles.primaryButton}
+            disabled={loadingQuestions}
           >
-            Generate Interview Questions
+            {loadingQuestions
+              ? "Generating Questions..."
+              : "Generate Interview Questions"}
           </button>
 
           {questions.length === 0 && (
             <p style={styles.info}>
-              Click the button above to start your
-              interview.
+              Upload your resume first, then click the
+              button above to generate personalized
+              interview questions.
             </p>
           )}
 
@@ -245,6 +303,7 @@ function App() {
 
                 {/* Voice Button */}
                 <button
+                  type="button"
                   onClick={() =>
                     startRecording(index)
                   }
@@ -257,6 +316,7 @@ function App() {
 
                 {/* Submit Button */}
                 <button
+                  type="button"
                   onClick={() =>
                     submitAnswer(index)
                   }
@@ -301,7 +361,6 @@ function App() {
 
           <div style={styles.statsContainer}>
 
-            {/* Questions Answered */}
             <div style={styles.statCard}>
               <h3>Questions Answered</h3>
               <p style={styles.statNumber}>
@@ -309,7 +368,6 @@ function App() {
               </p>
             </div>
 
-            {/* Average Score */}
             <div style={styles.statCard}>
               <h3>Average Score</h3>
               <p style={styles.statNumber}>
@@ -317,7 +375,6 @@ function App() {
               </p>
             </div>
 
-            {/* Performance */}
             <div style={styles.statCard}>
               <h3>Performance</h3>
               <p style={styles.statNumber}>
@@ -327,7 +384,6 @@ function App() {
 
           </div>
 
-          {/* Overall Progress */}
           <h3>Overall Performance</h3>
 
           <div style={styles.progressBackground}>
@@ -341,7 +397,6 @@ function App() {
             </div>
           </div>
 
-          {/* Individual Scores */}
           <h3>Question Scores</h3>
 
           {scores.length === 0 && (
